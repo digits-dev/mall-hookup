@@ -1,0 +1,54 @@
+/* Full-screen modal background */
+.nprogress-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(25, 24, 24, 0.5); /* Semi-transparent background */
+    z-index: 1030; /* Slightly lower than the loader to ensure layering */
+}
+
+/* Custom loader container */
+.nprogress-custom-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1031;
+    text-align: center;
+}
+
+/* Circular loader */
+.nprogress-circle-loader-wrapper {
+    position: relative;
+    width: 80px;
+    height: 80px;
+}
+
+
+.nprogress-circle-loader {
+    width: 90%;
+    height: 90%;
+    border-radius: 50%;
+    border: 5px solid linear-gradient(0deg, rgba(63,249,220,0.1) 33%, rgba(63,249,220,1) 100%);
+    border-top: 5px solid rgb(21, 222, 191);
+    animation: spin 0.3s linear infinite;
+}
+
+/* Keyframes for spinning animation */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Optional: Hide the default bar */
+#nprogress .bar {
+    display: none !important;
+}
+
+
