@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from "axios";
 
 const getAppName = async () => {
     // try {
@@ -10,7 +10,7 @@ const getAppName = async () => {
     //     }
     // } catch (error) {
     //     console.error('Error fetching app name:', error);
-        return 'HC x BTB Portal';
+    return "MALL HOOKUP";
     // }
 };
 
