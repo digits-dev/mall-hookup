@@ -179,7 +179,10 @@ Route::group(['middleware' => ['auth', 'web']], function () {
 
 Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::post('/get-pos-data', [DashboardController::class, 'getPosData']);
+    Route::get('/get-pos-data', [DashboardController::class, 'getPosData']);
+    Route::get('/resync-yesterday', [DashboardController::class, 'resyncYesterday']);
+    Route::get('/resync-all-failed', [DashboardController::class, 'resyncAllFailed']);
+    Route::post('/resync-between-dates', [DashboardController::class, 'resyncBetweenDates']);
     Route::post('/pos-supplier-retrieve', [DashboardController::class, 'POSSupplierRetrieve']);
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');

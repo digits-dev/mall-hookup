@@ -36,7 +36,7 @@ return [
         'pos_supplier_retrieve_url' => env('POS_SUPPLIER_RETRIEVE_URL'),
         'pos_supplier_api_key' => env('POS_SUPPLIER_API_KEY'),
         'pos_supplier_retrieve_api_key' => env('POS_SUPPLIER_RETRIEVE_API_KEY'),
-        'secrey_key' => env('MALL_HOOKUP_SECRET_KEY')
+        'secret_key' => env('MALL_HOOKUP_SECRET_KEY')
     ]
 
 ];

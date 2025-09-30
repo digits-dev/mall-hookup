@@ -11,6 +11,7 @@ class PosData extends Model
     
     protected $fillable = [
         'id',
+        'status',
         'contract_number',
         'contract_key',
         'pos_no',

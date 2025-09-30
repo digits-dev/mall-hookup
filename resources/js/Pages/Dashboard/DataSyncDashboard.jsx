@@ -1,5 +1,7 @@
 import ContentPanel from "../../Components/Table/ContentPanel";
 import JsonModal from "../../Components/Modal/JsonModal";
+import Modal from "../../Components/Modal/Modal";
+import dayjs from "dayjs";
 
 import { useState } from "react";
 import {
@@ -15,15 +17,18 @@ import {
 } from "lucide-react";
 import axios from "axios";
 
-const DataSyncDashboard = ({ api_responses, posData }) => {
+const DataSyncDashboard = ({ api_responses, posData, my_privilege_id }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isModalDateOpen, setIsModalDateOpen] = useState(false);
     const [modalData, setModalData] = useState(null);
     const [activeTab, setActiveTab] = useState("logs");
     const [isOpen, setIsOpen] = useState(false);
     const [modalJsonData, setModalJsonData] = useState();
     const [title, setTitle] = useState();
     const [action, setAction] = useState();
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
 
     const recordsPerPage = 10;
     const [syncCurrentPage, setSyncCurrentPage] = useState(1);
@@ -44,13 +49,14 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
         posDataStartIndex,
         posDataEndIndex
     );
+
     const handleSyncData = async () => {
         setIsLoading(true);
         setIsModalOpen(true);
-        setAction("re-sync");
+        setAction("sync");
 
         try {
-            const response = await axios.post("/get-pos-data");
+            const response = await axios.get("/get-pos-data");
 
             setModalData(response.data);
         } catch (error) {
@@ -66,7 +72,76 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
         }
     };
 
-    const todaySync = api_responses[0]; // already the latest
+    const handleReSyncYesterday = async () => {
+        setIsLoading(true);
+        setIsModalOpen(true);
+        setAction("sync");
+
+        try {
+            const response = await axios.get("/resync-all-failed");
+
+            setModalData(response.data);
+        } catch (error) {
+            setModalData({
+                status: error.response?.status || 500,
+                message:
+                    error.response?.data?.message ||
+                    "Network error occurred. Please try again.",
+                data: [],
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleReSyncBetweenDate = () => {
+        setIsModalDateOpen(true);
+    };
+
+    const submitReSyncBetweenDate = async () => {
+        if (!fromDate || !toDate) {
+            alert("Please select both From and To dates");
+            return;
+        }
+
+        setIsLoading(true);
+        setIsModalOpen(true);
+        setAction("sync");
+        setIsModalDateOpen(false); // close date modal when submitting
+
+        try {
+            const response = await axios.post("/resync-between-dates", {
+                from: fromDate,
+                to: toDate,
+            });
+
+            setModalData(response.data);
+        } catch (error) {
+            setModalData({
+                status: error.response?.status || 500,
+                message:
+                    error.response?.data?.message ||
+                    "Network error occurred. Please try again.",
+                data: [],
+            });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const today = dayjs().format("YYYY-MM-DD");
+
+    // latest API sync attempt
+    const latestSync = api_responses[0];
+
+    // check if today’s posData exists
+    const todayPosData = posData.find(
+        (pos) => dayjs(pos.date_of_transaction).format("YYYY-MM-DD") === today
+    );
+
+    const todaySync = todayPosData || null;
+
+    const isSyncedToday = todayPosData?.status?.toLowerCase() === "success";
 
     const goToNextPage = () => {
         if (activeTab === "logs") {
@@ -194,10 +269,11 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
     const closeModal = () => {
         setIsModalOpen(false);
         setModalData(null);
-        if (action === "re-sync") {
+        if (action === "sync") {
             window.location.reload();
         }
     };
+
     const closeJsonModal = () => {
         setIsOpen(false);
     };
@@ -220,16 +296,38 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                     Synchronize data from database to Mall
                                 </p>
                             </div>
-                            <button
-                                onClick={handleSyncData}
-                                disabled={
-                                    todaySync.status == "success" ?? isLoading
-                                }
-                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
-                            >
-                                <RefreshCw className="h-5 w-5" />
-                                Re-Sync Data to Mall
-                            </button>
+                            <div className="flex items-center justify-between gap-3">
+                                {[1, 2].includes(my_privilege_id) && (
+                                    <button
+                                        onClick={handleReSyncBetweenDate}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
+                                    >
+                                        <RefreshCw className="h-5 w-5" />
+                                        ReSync Between Date
+                                    </button>
+                                )}
+                                {[1, 3].includes(my_privilege_id) && (
+                                    <>
+                                        <button
+                                            onClick={handleSyncData}
+                                            disabled={
+                                                isSyncedToday || isLoading
+                                            }
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
+                                        >
+                                            <RefreshCw className="h-5 w-5" />
+                                            Sync Data to Mall
+                                        </button>
+                                        <button
+                                            onClick={handleReSyncYesterday}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
+                                        >
+                                            <RefreshCw className="h-5 w-5" />
+                                            Sync All Failed
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -240,16 +338,27 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                     <p className="text-sm font-medium text-gray-600">
                                         Today's Status
                                     </p>
-                                    <div
-                                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2 ${getStatusColor(
-                                            todaySync.status
-                                        )}`}
-                                    >
-                                        <span className="mr-1">
-                                            {getStatusIcon(todaySync.status)}
-                                        </span>
-                                        {todaySync.status.toUpperCase()}
-                                    </div>
+                                    {todaySync ? (
+                                        <div
+                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2 ${getStatusColor(
+                                                todaySync.status
+                                            )}`}
+                                        >
+                                            <span className="mr-1">
+                                                {getStatusIcon(
+                                                    todaySync.status
+                                                )}
+                                            </span>
+                                            {todaySync.status.toUpperCase()}
+                                        </div>
+                                    ) : (
+                                        <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-md font-medium mt-2 text-red-600 bg-red-100">
+                                            <span className="mr-1">
+                                                <XCircle className="h-4 w-4 text-red-600" />
+                                            </span>
+                                            No Sync Yet
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="text-2xl">📊</div>
                             </div>
@@ -259,12 +368,17 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h3 className="text-sm font-medium text-gray-600">
-                                        Total Records Synced
+                                        Failed Transactions
                                     </h3>
                                     <div className="text-2xl font-bold text-gray-900">
-                                        {api_responses?.length ?? 0}
+                                        {posData?.filter(
+                                            (pos) =>
+                                                pos.status?.toLowerCase() ===
+                                                "failed"
+                                        ).length ?? 0}
                                     </div>
                                 </div>
+
                                 <div className="text-2xl">📝</div>
                             </div>
                         </div>
@@ -291,7 +405,11 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                         Last Sync
                                     </h3>
                                     <div className="text-2xl font-bold text-gray-900">
-                                        {todaySync.created_at}
+                                        {latestSync?.api_created_at
+                                            ? dayjs(
+                                                  latestSync.api_created_at
+                                              ).format("MMM D, YYYY h:mm A")
+                                            : "No sync yet"}
                                     </div>
                                 </div>
                                 <div className="text-2xl">🔄</div>
@@ -491,7 +609,6 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                                                 </span>
                                                             </button>
                                                         </td>
-
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                             <button
                                                                 onClick={() =>
@@ -606,6 +723,9 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                         <thead className="bg-gray-50">
                                             <tr>
                                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Status
+                                                </th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     Contract Number
                                                 </th>
                                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -638,6 +758,20 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                                         key={data.id}
                                                         className="hover:bg-gray-50"
                                                     >
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <span
+                                                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(
+                                                                    data.status
+                                                                )}`}
+                                                            >
+                                                                <span className="mr-1">
+                                                                    {getStatusIcon(
+                                                                        data.status
+                                                                    )}
+                                                                </span>
+                                                                {data.status}
+                                                            </span>
+                                                        </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                             {
                                                                 data.contract_number
@@ -810,7 +944,13 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                         </div>
 
                                         {modalData.data?.Main &&
-                                            modalData.data.Main.length > 0 && (
+                                            modalData.data.Main.length > 0 &&
+                                            modalData.data.Main[0][
+                                                "Contract No."
+                                            ] &&
+                                            modalData.data.Main[0][
+                                                "POS No."
+                                            ] && (
                                                 <div>
                                                     <span className="text-sm font-medium text-gray-600">
                                                         Transaction Details:
@@ -831,7 +971,7 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                                                             <p className="text-gray-900">
                                                                                 {
                                                                                     item[
-                                                                                        "Contract No"
+                                                                                        "Contract No."
                                                                                     ]
                                                                                 }
                                                                             </p>
@@ -868,7 +1008,7 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                                                                                 Sales:
                                                                             </span>
                                                                             <p className="text-green-600 font-medium">
-                                                                                $
+                                                                                ₱
                                                                                 {
                                                                                     item[
                                                                                         "Total Sales"
@@ -904,6 +1044,49 @@ const DataSyncDashboard = ({ api_responses, posData }) => {
                     title={title}
                     modalData={modalJsonData}
                 ></JsonModal>
+                <Modal
+                    show={isModalDateOpen}
+                    fontColor="text-white"
+                    title="ReSync Transactions Between Date"
+                    onClose={() => setIsModalDateOpen(false)}
+                    btnIcon="fa fa-edit"
+                >
+                    <div className="p-4 space-y-4">
+                        <div>
+                            <label className="block mb-1">From Date</label>
+                            <input
+                                type="date"
+                                className="w-full p-2 border rounded"
+                                value={fromDate}
+                                onChange={(e) => setFromDate(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block mb-1">To Date</label>
+                            <input
+                                type="date"
+                                className="w-full p-2 border rounded"
+                                value={toDate}
+                                onChange={(e) => setToDate(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex justify-end space-x-2">
+                            <button
+                                className="px-4 py-2 bg-gray-500 text-white rounded"
+                                onClick={() => setIsModalDateOpen(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="px-4 py-2 bg-blue-600 text-white rounded"
+                                onClick={submitReSyncBetweenDate}
+                            >
+                                ReSync
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
             </div>
         </>
     );
