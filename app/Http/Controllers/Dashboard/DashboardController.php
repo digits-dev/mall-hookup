@@ -39,7 +39,7 @@ class DashboardController extends Controller
         $today = now()->format('Ymd');
          $posData = DB::connection('sqlsrv')->select("
             SET NOCOUNT ON; 
-            exec [RptSpESalesSummaryReport_BIR] 100,'0572','20250121','20250121'
+            exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$today}','{$today}'
         ")[0];
 
         $totalSales = $posData->GrossTotalAmt + $posData->Discount + $posData->Returns - $posData->VatTotalAmt;
@@ -124,31 +124,66 @@ class DashboardController extends Controller
       return response()->json($responseArray);
 
     }
-
-    public function resyncYesterday () {
+    
+    public function resyncYesterday()
+    {
         $yesterday = Carbon::yesterday()->format('Y-m-d');
+
+        // Check if POS data exists
         $posData = PosData::where('date_of_transaction', $yesterday)->first();
 
         if (!$posData) {
-            Log::info("No POS data found for {$yesterday}.");
-            return "No POS data found for {$yesterday}.";
+            // Pull from SQL Server if missing
+            $sqlDate = Carbon::yesterday()->format('Ymd');
+            $sqlData = DB::connection('sqlsrv')->select("
+                SET NOCOUNT ON; 
+                exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$sqlDate}','{$sqlDate}'
+            ");
+
+            if (empty($sqlData)) {
+                Log::info("No POS data found for {$yesterday} on SQL Server.");
+                return [
+                    'status'  => 404,
+                    'message' => "No POS data found for {$yesterday}."
+                ];
+            }
+
+            $record = $sqlData[0];
+            $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - $record->VatTotalAmt;
+            $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
+
+            $posData = PosData::create([
+                'date_of_transaction' => $yesterday,
+                'total_sales'         => $totalSales,
+                'transaction_count'   => $transactionCount,
+                'contract_number'     => 'BP07-2000000000011',
+                'contract_key'        => '66BIBZNNR9RGNCDLCW50YASVC23L8L',
+                'pos_no'              => 'A1002688',
+                'company_code'        => 'BP07',
+                'status'              => 'pending',
+            ]);
         }
 
         if ($posData->status === 'success') {
             Log::info("Yesterday's sync already succeeded.");
-            return "Yesterday's sync already succeeded.";
+            return [
+                'status'  => 200,
+                'message' => "Yesterday's sync already succeeded."
+            ];
         }
 
+        // Build API payload
         $data = [
-            'Contractno'           => $posData->contract_number,
-            'GenerateKey'          => $posData->contract_key,
-            'POSNO'                => $posData->pos_no,
-            'CompanyNameCol'       => $posData->company_code,
-            'TransactionDateCol'   => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
-            'TotalSalesCol'        => $posData->total_sales,
-            'TransactionCount'     => $posData->transaction_count,
+            'Contractno'         => $posData->contract_number,
+            'GenerateKey'        => $posData->contract_key,
+            'POSNO'              => $posData->pos_no,
+            'CompanyNameCol'     => $posData->company_code,
+            'TransactionDateCol' => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
+            'TotalSalesCol'      => $posData->total_sales,
+            'TransactionCount'   => $posData->transaction_count,
         ];
 
+        // Send to API
         $response = Http::withOptions(['verify' => false])
             ->withHeaders([
                 'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
@@ -158,22 +193,24 @@ class DashboardController extends Controller
             ->post(config('services.mall_hookup.pos_supplier_url'), $data);
 
         $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
+        $status = $responseArray['status'] == 200 ? 'success' : 'failed';
 
+        // Log attempt
         ApiResponse::create([
             'pos_data_id'  => $posData->id,
             'payload'      => json_encode($data),
-            'status'       => $responseArray['status'] == 200 ? 'success' : 'failed',
+            'status'       => $status,
             'message'      => $responseArray['message'] ?? null,
             'data'         => json_encode($response->json($data)),
             'raw_response' => json_encode($responseArray),
         ]);
 
-            $posData->update([
-            'status' => $responseArray['status'] == 200 ? 'success' : 'failed',
-        ]);
+        // Update pos_data status
+        $posData->update(['status' => $status]);
+
         return $responseArray;
     }
-    
+
         public function resyncAllFailed()
     {
         $failedData = PosData::where('status', 'failed')->get();
