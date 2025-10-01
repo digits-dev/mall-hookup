@@ -13,6 +13,7 @@ use DateTime;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 use Illuminate\Support\Facades\Log;
 
 class DashboardController extends Controller
@@ -38,7 +39,7 @@ class DashboardController extends Controller
         $today = now()->format('Ymd');
          $posData = DB::connection('sqlsrv')->select("
             SET NOCOUNT ON; 
-            exec [RptSpESalesSummaryReport_BIR] 100,'0572',{$today},{$today}
+            exec [RptSpESalesSummaryReport_BIR] 100,'0572','20250121','20250121'
         ")[0];
 
         $totalSales = $posData->GrossTotalAmt + $posData->Discount + $posData->Returns - $posData->VatTotalAmt;
@@ -133,14 +134,6 @@ class DashboardController extends Controller
             return "No POS data found for {$yesterday}.";
         }
 
-        // $success = ApiResponse::where('pos_data_id', $posData->id)
-        //     ->where('status', 'success')
-        //     ->exists();
-        // if ($success) {
-        //    Log::info("Yesterday's sync already succeeded.");
-        //     return "Yesterday's sync already succeeded.";
-        // }
-        
         if ($posData->status === 'success') {
             Log::info("Yesterday's sync already succeeded.");
             return "Yesterday's sync already succeeded.";
@@ -244,76 +237,115 @@ class DashboardController extends Controller
     }
 
     public function resyncBetweenDates(Request $request)
-    {
-        $request->validate([
-            'from' => 'required|date',
-            'to'   => 'required|date|after_or_equal:from',
-        ]);
+{
+    // Validate input
+    $request->validate([
+        'from' => 'required|date',
+        'to'   => 'required|date|after_or_equal:from',
+    ]);
 
-        $from = Carbon::parse($request->from)->format('Y-m-d');
-        $to   = Carbon::parse($request->to)->format('Y-m-d');
+    $from = Carbon::parse($request->from)->format('Y-m-d');
+    $to   = Carbon::parse($request->to)->format('Y-m-d');
 
-        // Fetch ALL pos_data within the date range
-        $transactions = PosData::whereBetween('date_of_transaction', [$from, $to])->get();
+    $period = CarbonPeriod::create($from, $to);
+    $transactions = collect();
 
-        if ($transactions->isEmpty()) {
-            return response()->json([
-                'status' => 200,
-                'message' => "No transactions found between {$from} and {$to}.",
-            ]);
+    foreach ($period as $date) {
+        $formattedDate = $date->format('Y-m-d');
+
+        // Check if POS data exists for this date
+        $posData = PosData::where('date_of_transaction', $formattedDate)->first();
+
+        if (!$posData) {
+            // Pull missing day from SQL Server
+            $sqlDate = $date->format('Ymd');
+            $sqlData = DB::connection('sqlsrv')->select("
+                SET NOCOUNT ON; 
+                exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$sqlDate}','{$sqlDate}'
+            ");
+
+            if (!empty($sqlData)) {
+                $record = $sqlData[0];
+                $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - $record->VatTotalAmt;
+                $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
+
+                $posData = PosData::create([
+                    'date_of_transaction' => $formattedDate,
+                    'total_sales'         => $totalSales,
+                    'transaction_count'   => $transactionCount,
+                    'contract_number'     => 'BP07-2000000000011',
+                    'contract_key'        => '66BIBZNNR9RGNCDLCW50YASVC23L8L',
+                    'pos_no'              => 'A1002688',
+                    'company_code'        => 'BP07',
+                    'status'              => 'pending',
+                ]);
+            }
         }
 
-        $results = [];
-
-        foreach ($transactions as $posData) {
-            $data = [
-                'Contractno'           => $posData->contract_number,
-                'GenerateKey'          => $posData->contract_key,
-                'POSNO'                => $posData->pos_no,
-                'CompanyNameCol'       => $posData->company_code,
-                'TransactionDateCol'   => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
-                'TotalSalesCol'        => $posData->total_sales,
-                'TransactionCount'     => $posData->transaction_count,
-            ];
-
-            $response = Http::withOptions(['verify' => false])
-                ->withHeaders([
-                    'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
-                    'secretKey' => config('services.mall_hookup.secret_key'),
-                ])
-                ->asForm()
-                ->post(config('services.mall_hookup.pos_supplier_url'), $data);
-
-            $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
-            $status = $responseArray['status'] == 200 ? 'success' : 'failed';
-
-            // Update pos_data with the latest status
-            $posData->update(['status' => $status]);
-
-            // Save to history table
-            ApiResponse::create([
-                'pos_data_id'  => $posData->id,
-                'payload'      => json_encode($data),
-                'status'       => $status,
-                'message'      => $responseArray['message'] ?? null,
-                'data'         => json_encode($response->json($data)),
-                'raw_response' => json_encode($responseArray),
-            ]);
-
-            $results[] = [
-                 'Date of Transaction' => $posData->date_of_transaction,
-                'status'      => $status,
-                'message'     => $responseArray['message'] ?? null,
-            ];
+        if ($posData) {
+            $transactions->push($posData);
         }
+    }
 
+    if ($transactions->isEmpty()) {
         return response()->json([
-            'status'  => 200,
-            'message' => "Resync complete for transactions between {$from} and {$to}.",
-            'results' => $results,
+            'status'  => 404,
+            'message' => "No transactions found between {$from} and {$to}.",
         ]);
     }
 
+    $results = [];
+
+    foreach ($transactions as $posData) {
+
+        $data = [
+            'Contractno'         => $posData->contract_number,
+            'GenerateKey'        => $posData->contract_key,
+            'POSNO'              => $posData->pos_no,
+            'CompanyNameCol'     => $posData->company_code,
+            'TransactionDateCol' => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
+            'TotalSalesCol'      => $posData->total_sales,
+            'TransactionCount'   => $posData->transaction_count,
+        ];
+
+        // Send to API
+        $response = Http::withOptions(['verify' => false])
+            ->withHeaders([
+                'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
+                'secretKey' => config('services.mall_hookup.secret_key'),
+            ])
+            ->asForm()
+            ->post(config('services.mall_hookup.pos_supplier_url'), $data);
+
+        $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
+        $status = $responseArray['status'] == 200 ? 'success' : 'failed';
+
+        // Update POS data status
+        $posData->update(['status' => $status]);
+
+        // Log attempt in ApiResponse
+        ApiResponse::create([
+            'pos_data_id'  => $posData->id,
+            'payload'      => json_encode($data),
+            'status'       => $status,
+            'message'      => $responseArray['message'] ?? null,
+            'data'         => json_encode($response->json($data)),
+            'raw_response' => json_encode($responseArray),
+        ]);
+
+        $results[] = [
+            'Date of Transaction' => $posData->date_of_transaction,
+            'status'              => $status,
+            'message'             => $responseArray['message'] ?? null,
+        ];
+    }
+
+    return response()->json([
+        'status'  => 200,
+        'message' => "Resync complete for transactions between {$from} and {$to}.",
+        'results' => $results,
+    ]);
+}
 
 
 
