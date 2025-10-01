@@ -39,7 +39,7 @@ class DashboardController extends Controller
         $today = now()->format('Ymd');
         $posData = DB::connection('sqlsrv')->select("
         SET NOCOUNT ON; 
-        exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$today}','{$today}'");
+        exec [RptSpESalesSummaryReport_BIR] 100,'9999','{$today}','{$today}'");
 
             if (empty($posData)) {
                 return response()->json([
@@ -146,7 +146,7 @@ class DashboardController extends Controller
             $sqlDate = Carbon::yesterday()->format('Ymd');
             $sqlData = DB::connection('sqlsrv')->select("
                 SET NOCOUNT ON; 
-                exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$sqlDate}','{$sqlDate}'
+                exec [RptSpESalesSummaryReport_BIR] 100,'9999','{$sqlDate}','{$sqlDate}'
             ");
 
             if (empty($sqlData)) {
@@ -307,7 +307,7 @@ class DashboardController extends Controller
             $sqlDate = $date->format('Ymd');
             $sqlData = DB::connection('sqlsrv')->select("
                 SET NOCOUNT ON; 
-                exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$sqlDate}','{$sqlDate}'
+                exec [RptSpESalesSummaryReport_BIR] 100,'9999','{$sqlDate}','{$sqlDate}'
             ");
 
             if (!empty($sqlData)) {

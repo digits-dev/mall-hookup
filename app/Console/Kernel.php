@@ -14,16 +14,13 @@ class Kernel extends ConsoleKernel
     {
         $schedule->command('inspire')->hourly();
         $schedule->command('mysql:backup')->daily()->at('06:00');
-        $schedule->call('\App\Http\Controllers\Dashboard\DashboardController@resyncYesterday')
-            ->dailyAt('10:50');
+        // $schedule->call('\App\Http\Controllers\Dashboard\DashboardController@resyncYesterday')
+        //     ->dailyAt('10:50');
 
-        $schedule->call('\App\Http\Controllers\Dashboard\DashboardController@resyncYesterday')
-            ->dailyAt('11:50');
+        // $schedule->call('\App\Http\Controllers\Dashboard\DashboardController@resyncYesterday')
+        //     ->dailyAt('11:50');
 
 
-        $schedule->call(function () {
-            \Log::info('Scheduler is running');
-        })->everyMinute();
     }
 
     /**
