@@ -1,0 +1,23 @@
+# Ignore node and vendor since we'll mount them / build them separately
+node_modules
+npm-debug.log
+yarn-error.log
+
+vendor
+composer.lock
+
+# Ignore git and IDE stuff
+.git
+.gitignore
+*.md
+.idea
+.vscode
+
+# Ignore OS/system files
+.DS_Store
+Thumbs.db
+
+# Ignore logs and caches
+storage/logs/*
+storage/framework/sessions/*
+storage/framework/cache/*
