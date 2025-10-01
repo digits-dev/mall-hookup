@@ -37,10 +37,19 @@ class DashboardController extends Controller
     public function getPosData() {
 
         $today = now()->format('Ymd');
-         $posData = DB::connection('sqlsrv')->select("
-            SET NOCOUNT ON; 
-            exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$today}','{$today}'
-        ")[0];
+        $posData = DB::connection('sqlsrv')->select("
+        SET NOCOUNT ON; 
+        exec [RptSpESalesSummaryReport_BIR] 100,'0572','{$today}','{$today}'");
+
+            if (empty($posData)) {
+                return response()->json([
+                    'status'  => 404,
+                    'message' => "No POS data found for today ({$today}).",
+                    'data'    => [],
+                ]);
+            }
+
+        $posData = $posData[0];
 
         $totalSales = $posData->GrossTotalAmt + $posData->Discount + $posData->Returns - $posData->VatTotalAmt;
         $transactionCount = $posData->DocRangeTo - $posData->DocRangeFrom;
