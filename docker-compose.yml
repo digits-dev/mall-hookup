@@ -14,6 +14,7 @@ services:
             - db
         networks:
             - laravel
+        restart: always
 
     nginx:
         image: nginx:stable
@@ -27,11 +28,11 @@ services:
             - app
         networks:
             - laravel
+        restart: always
 
     db:
         image: mysql:8.0
         container_name: laravel-db
-        restart: unless-stopped
         environment:
             MYSQL_ROOT_PASSWORD:
             MYSQL_ALLOW_EMPTY_PASSWORD: yes
@@ -40,6 +41,7 @@ services:
             - dbdata:/var/lib/mysql
         networks:
             - laravel
+        restart: always
         # Optional: expose DB for GUI tools like TablePlus
         # ports:
         #   - "33060:3306"
@@ -56,6 +58,7 @@ services:
             - "5173:5173"
         networks:
             - laravel
+        restart: always
 
     scheduler:
         image: laravel-app # Same image as the PHP app
@@ -68,6 +71,7 @@ services:
             bash -c 'while true; do php artisan schedule:run --no-interaction >> /var/www/storage/logs/scheduler.log 2>&1; sleep 60; done'
         networks:
             - laravel
+        restart: always
 
 volumes:
     dbdata:
