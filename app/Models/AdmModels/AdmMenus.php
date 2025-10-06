@@ -33,6 +33,6 @@ class AdmMenus extends Model
     }
 
     public function getMenusPrivileges(){
-        return $this->hasMany(admMenusPrivileges::class, 'id_adm_menus', 'id',);
+        return $this->hasMany(AdmMenusPrivileges::class, 'id_adm_menus', 'id',);
     }
 }

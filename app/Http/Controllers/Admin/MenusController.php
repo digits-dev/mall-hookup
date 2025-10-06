@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Admin;
 use App\Helpers\CommonHelpers;
 use App\Http\Controllers\Controller;
 use App\Models\AdmModels\AdmMenus;
-use App\Models\AdmModels\admMenusPrivileges;
+use App\Models\AdmModels\AdmMenusPrivileges;
 use App\Models\AdmModels\AdmPrivileges;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -80,7 +80,7 @@ class MenusController extends Controller{
                 'sorting' => 0, 
             ]);
 
-            admMenusPrivileges::create([
+            AdmMenusPrivileges::create([
                 'id_adm_menus' => $menu->id, 
                 'id_adm_privileges' => $request->id_adm_privileges,   
             ]);
@@ -179,7 +179,7 @@ class MenusController extends Controller{
             DB::beginTransaction();
             
             // FOR UPDATING NEW PRIVILEGE
-            $currentPrivileges = admMenusPrivileges::where('id_adm_menus', $request->id)
+            $currentPrivileges = AdmMenusPrivileges::where('id_adm_menus', $request->id)
             ->pluck('id_adm_privileges')
             ->toArray();
 
@@ -187,7 +187,7 @@ class MenusController extends Controller{
             $privilegesToDelete = array_diff($currentPrivileges, $newPrivileges);
 
             // DELETING PRIVILEGE/S
-            admMenusPrivileges::where('id_adm_menus', $request->id)
+            AdmMenusPrivileges::where('id_adm_menus', $request->id)
             ->whereIn('id_adm_privileges', $privilegesToDelete)
             ->delete();
 
@@ -203,7 +203,7 @@ class MenusController extends Controller{
         
             // INSERT NEW PRIVILEGE
             if (!empty($newRecords)) {
-                admMenusPrivileges::insert($newRecords);
+                AdmMenusPrivileges::insert($newRecords);
             }
 
             // FOR UPDATING MENU

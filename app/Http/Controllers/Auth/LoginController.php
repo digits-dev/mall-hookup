@@ -7,7 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\AdmAdminMenus;
 use App\Models\AdmModels\AdmMenus;
-use App\Models\AdmModels\admMenusPrivileges;
+use App\Models\AdmModels\AdmMenusPrivileges;
 use App\Providers\AppServiceProvider;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -90,7 +90,7 @@ class LoginController extends Controller
 
             $request->session()->regenerate();
 
-            $menus_privileges = admMenusPrivileges::where('id_adm_privileges',  $session_details['priv']->id)
+            $menus_privileges = AdmMenusPrivileges::where('id_adm_privileges',  $session_details['priv']->id)
                 ->pluck('id_adm_menus');
 
             $menus = AdmMenus::with([
