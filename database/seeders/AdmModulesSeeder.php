@@ -135,6 +135,36 @@ class AdmModulesSeeder extends Seeder
                 'is_active' => 1,
                 'created_at' => date('Y-m-d H:i:s'),
             ],
+            [
+                'name' => 'ETP Credendials',
+                'icon' => 'fa-solid fa-lock',
+                'path' => 'etp_creds',
+                'table_name' => 'etp_creds',
+                'controller' => 'EtpCreds\EtpCredsController',
+                'is_protected' => 0,
+                'is_active' => 1,
+                'created_at' => date('Y-m-d H:i:s'),
+            ],
+            [
+                'name' => 'Store Credentials',
+                'icon' => 'fa-solid fa-credit-card',
+                'path' => 'store_creds',
+                'table_name' => 'store_creds',
+                'controller' => 'StoreCreds\StoreCredsController',
+                'is_protected' => 0,
+                'is_active' => 1,
+                'created_at' => date('Y-m-d H:i:s'),
+            ],
+            [
+                'name' => 'Mall Hookup API',
+                'icon' => 'fa-solid fa-diagram-project',
+                'path' => 'mall_hookup_api',
+                'table_name' => 'mall_hookup_api',
+                'controller' => 'MallHookupApi\MallHookupApiController',
+                'is_protected' => 0,
+                'is_active' => 1,
+                'created_at' => date('Y-m-d H:i:s'),
+            ],
 
             // NEW COLUMNS
 

@@ -14,20 +14,56 @@ class AdmMenusSeeder extends Seeder
      * @return void
      */
     public function run() {
-        $menus = [
-            [
-                'name'              => 'Dashboard',
-                'type'              => 'Route',
-                'path'              => 'Dashboard\DashboardControllerGetIndex',
-                'slug'              => 'dashboard',
-                'icon'              => 'fa-solid fa-chart-simple',
-                'parent_id'         => 0,
-                'is_active'         => 1,
-                'is_dashboard'      => 1,
-                'id_adm_privileges' => 1,
-                'sorting'           => 1
-            ],
-        ];
+   $menus = [
+    [
+        'name'              => 'Dashboard',
+        'type'              => 'Route',
+        'path'              => 'Dashboard\DashboardControllerGetIndex',
+        'slug'              => 'dashboard',
+        'icon'              => 'fa-solid fa-chart-simple',
+        'parent_id'         => 0,
+        'is_active'         => 1,
+        'is_dashboard'      => 1,
+        'id_adm_privileges' => 1,
+        'sorting'           => 1,
+    ],
+    [
+        'name'              => 'ETP Credendials',
+        'type'              => 'Route',
+        'path'              => 'EtpCreds\EtpCredsControllerGetIndex',
+        'slug'              => 'etp_creds',
+        'icon'              => 'fa-solid fa-lock',
+        'parent_id'         => 0,
+        'is_active'         => 1,
+        'is_dashboard'      => 0,
+        'id_adm_privileges' => 1,
+        'sorting'           => 2,
+    ],
+    [
+        'name'              => 'Store Credentials',
+        'type'              => 'Route',
+        'path'              => 'StoreCreds\StoreCredsControllerGetIndex',
+        'slug'              => 'store_creds',
+        'icon'              => 'fa-solid fa-credit-card',
+        'parent_id'         => 0,
+        'is_active'         => 1,
+        'is_dashboard'      => 0,
+        'id_adm_privileges' => 1,
+        'sorting'           => 3,
+    ],
+    [
+        'name'              => 'Mall Hookup API',
+        'type'              => 'Route',
+        'path'              => 'MallHookupApi\MallHookupApiControllerGetIndex',
+        'slug'              => 'mall_hookup_api',
+        'icon'              => 'fa-solid fa-diagram-project',
+        'parent_id'         => 0,
+        'is_active'         => 1,
+        'is_dashboard'      => 0,
+        'id_adm_privileges' => 1,
+        'sorting'           => 4,
+    ],
+];
 
         foreach ($menus as $menu) {
             AdmMenus::updateOrCreate(

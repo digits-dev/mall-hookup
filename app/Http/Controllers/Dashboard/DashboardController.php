@@ -15,6 +15,9 @@ use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Facades\Log;
+use App\Models\EtpCreds;
+use App\Models\StoreCreds;
+use App\Models\MallHookupApi;
 
 class DashboardController extends Controller
 {
@@ -34,12 +37,40 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard/DataSyncDashboard', $data);
     }
 
+    private function sendMallHookupRequest(array $data, string $type = 'supplier')
+    {
+        $mallHookupApi = MallHookupApi::first();
+
+        $urlKey  = "pos_{$type}_url";
+        $apiKey  = "pos_{$type}_api_key";
+
+        return Http::withOptions(['verify' => false])
+            ->withHeaders([
+                'apiKey'    => $mallHookupApi?->$apiKey ?? config("services.mall_hookup.$apiKey"),
+                'secretKey' => $mallHookupApi?->secret_key ?? config('services.mall_hookup.secret_key'),
+            ])
+            ->asForm()
+            ->post($mallHookupApi?->$urlKey ?? config("services.mall_hookup.$urlKey"), $data);
+    }
+
     public function getPosData() {
 
+        $storeId = EtpCreds::value('store_id');
+        $storeCreds = StoreCreds::first();
+
+        if (empty($storeId) || !$storeCreds) {
+            return response()->json([
+                'status'  => 400,
+                'message' => 'Missing store credentials. Please set up store ID and store credentials before proceeding.',
+                'data'    => [],
+            ], 400);
+        }
+
+        // exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$today}','{$today}'");
         $today = now()->format('Ymd');
         $posData = DB::connection('sqlsrv')->select("
         SET NOCOUNT ON; 
-        exec [RptSpESalesSummaryReport_BIR] 100,'9999','{$today}','{$today}'");
+        exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','20250514','20250514'");
 
             if (empty($posData)) {
                 return response()->json([
@@ -65,23 +96,12 @@ class DashboardController extends Controller
                 'transaction_count'   => $transactionCount,
             ],
             [
-                'contract_number'     => 'BP07-2000000000011',
-                'contract_key'        => '66BIBZNNR9RGNCDLCW50YASVC23L8L',
-                'pos_no'              => 'A1002688',
-                'company_code'        => 'BP07',
+                'contract_number'     => $storeCreds->contract_number,
+                'contract_key'        => $storeCreds->contract_key,
+                'pos_no'              => $storeCreds->pos_no,
+                'company_code'        => $storeCreds->company_code,
             ]
         );
-
-        // $existingSuccess = ApiResponse::where('pos_data_id', $posDataModel->id)
-        //     ->where('status', 'success')
-        //     ->exists();
-
-        // if ($existingSuccess) {
-        //     return response()->json([
-        //         'status'  => 200,
-        //         'message' => 'Already successfully pushed. Cannot re-run.',
-        //     ]);
-        // }
 
         if ($posDataModel->status === 'success') {
             return response()->json([
@@ -90,25 +110,17 @@ class DashboardController extends Controller
             ]);
         }
 
-
         $data = [
-            'Contractno' => 'BP07-2000000000011',
-            'GenerateKey'    =>  '66BIBZNNR9RGNCDLCW50YASVC23L8L',
-            'POSNO'           =>  'A1002688',
-            'CompanyNameCol'    =>  'BP07',
+            'Contractno' => $storeCreds->contract_number,
+            'GenerateKey'    =>  $storeCreds->contract_key,
+            'POSNO'           =>  $storeCreds->pos_no,
+            'CompanyNameCol'    =>   $storeCreds->company_code,
             'TransactionDateCol' => $dateOfTransaction,
             'TotalSalesCol'     => $totalSales,
             'TransactionCount'  => $transactionCount,
         ];
-        
-    $response = Http::withOptions(['verify' => false])
-    ->withHeaders([
-        'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
-        'secretKey' => config('services.mall_hookup.secret_key'),
-    ])
-    ->asForm()
-    ->post(config('services.mall_hookup.pos_supplier_url'), $data);
 
+        $response = $this->sendMallHookupRequest($data);
 
         $rawResponse = $response->body();
         $clean = preg_replace('/[[:cntrl:]]/', '', $rawResponse);
@@ -129,13 +141,23 @@ class DashboardController extends Controller
             'status' => $responseArray['status'] == 200 ? 'success' : 'failed'
         ]);
 
-
       return response()->json($responseArray);
 
     }
     
     public function resyncYesterday()
     {
+        $storeId = EtpCreds::value('store_id');
+        $storeCreds = StoreCreds::first();
+
+        if (empty($storeId) || !$storeCreds) {
+                Log::info("Missing store credentials. Please set up store ID and store credentials before proceeding.");
+                return [
+                    'status'  => 404,
+                    'message' => "Missing store credentials. Please set up store ID and store credentials before proceeding."
+                ];
+        }
+
         $yesterday = Carbon::yesterday()->format('Y-m-d');
 
         // Check if POS data exists
@@ -146,7 +168,7 @@ class DashboardController extends Controller
             $sqlDate = Carbon::yesterday()->format('Ymd');
             $sqlData = DB::connection('sqlsrv')->select("
                 SET NOCOUNT ON; 
-                exec [RptSpESalesSummaryReport_BIR] 100,'9999','{$sqlDate}','{$sqlDate}'
+                exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$sqlDate}','{$sqlDate}'
             ");
 
             if (empty($sqlData)) {
@@ -165,10 +187,10 @@ class DashboardController extends Controller
                 'date_of_transaction' => $yesterday,
                 'total_sales'         => $totalSales,
                 'transaction_count'   => $transactionCount,
-                'contract_number'     => 'BP07-2000000000011',
-                'contract_key'        => '66BIBZNNR9RGNCDLCW50YASVC23L8L',
-                'pos_no'              => 'A1002688',
-                'company_code'        => 'BP07',
+                'contract_number'     => $storeCreds->contract_number,
+                'contract_key'        => $storeCreds->contract_key,
+                'pos_no'              => $storeCreds->pos_no,
+                'company_code'        => $storeCreds->company_code,
                 'status'              => 'pending',
             ]);
         }
@@ -192,14 +214,7 @@ class DashboardController extends Controller
             'TransactionCount'   => $posData->transaction_count,
         ];
 
-        // Send to API
-        $response = Http::withOptions(['verify' => false])
-            ->withHeaders([
-                'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
-                'secretKey' => config('services.mall_hookup.secret_key'),
-            ])
-            ->asForm()
-            ->post(config('services.mall_hookup.pos_supplier_url'), $data);
+        $response = $this->sendMallHookupRequest($data);
 
         $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
         $status = $responseArray['status'] == 200 ? 'success' : 'failed';
@@ -222,6 +237,16 @@ class DashboardController extends Controller
 
         public function resyncAllFailed()
     {
+        $storeCreds = StoreCreds::first();
+
+        if (!$storeCreds) {
+            return response()->json([
+                'status'  => 400,
+                'message' => 'Missing store credentials. Please set up store credentials before proceeding.',
+                'data'    => [],
+            ], 400);
+        }
+        
         $failedData = PosData::where('status', 'failed')->get();
 
         if ($failedData->isEmpty()) {
@@ -232,25 +257,19 @@ class DashboardController extends Controller
         }
 
         $results = [];
-
+        
         foreach ($failedData as $posData) {
             $data = [
-                'Contractno'           => $posData->contract_number,
-                'GenerateKey'          => $posData->contract_key,
-                'POSNO'                => $posData->pos_no,
-                'CompanyNameCol'       => $posData->company_code,
+                'Contractno' => $storeCreds->contract_number,
+                'GenerateKey'    =>  $storeCreds->contract_key,
+                'POSNO'           =>  $storeCreds->pos_no,
+                'CompanyNameCol'    =>   $storeCreds->company_code,
                 'TransactionDateCol'   => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
                 'TotalSalesCol'        => $posData->total_sales,
                 'TransactionCount'     => $posData->transaction_count,
             ];
 
-            $response = Http::withOptions(['verify' => false])
-                ->withHeaders([
-                    'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
-                    'secretKey' => config('services.mall_hookup.secret_key'),
-                ])
-                ->asForm()
-                ->post(config('services.mall_hookup.pos_supplier_url'), $data);
+            $response = $this->sendMallHookupRequest($data);
 
             $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
             $status = $responseArray['status'] == 200 ? 'success' : 'failed';
@@ -275,15 +294,20 @@ class DashboardController extends Controller
             ];
         }
 
+        if ($status == 'success') {
         return response()->json([
             'status'  => 200,
             'message' => 'Resync complete',
             'results' => $results,
         ]);
+        }else {
+            return response()->json($responseArray);
+        }
+       
     }
 
     public function resyncBetweenDates(Request $request)
-{
+    {
     // Validate input
     $request->validate([
         'from' => 'required|date',
@@ -296,6 +320,18 @@ class DashboardController extends Controller
     $period = CarbonPeriod::create($from, $to);
     $transactions = collect();
 
+    $storeId = EtpCreds::value('store_id');
+    $storeCreds = StoreCreds::first();
+
+    if (empty($storeId) || !$storeCreds) {
+        return response()->json([
+            'status'  => 400,
+            'message' => 'Missing store credentials. Please set up store ID and store credentials before proceeding.',
+            'data'    => [],
+        ], 400);
+    }
+
+
     foreach ($period as $date) {
         $formattedDate = $date->format('Y-m-d');
 
@@ -307,7 +343,7 @@ class DashboardController extends Controller
             $sqlDate = $date->format('Ymd');
             $sqlData = DB::connection('sqlsrv')->select("
                 SET NOCOUNT ON; 
-                exec [RptSpESalesSummaryReport_BIR] 100,'9999','{$sqlDate}','{$sqlDate}'
+                exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$sqlDate}','{$sqlDate}'
             ");
 
             if (!empty($sqlData)) {
@@ -319,10 +355,10 @@ class DashboardController extends Controller
                     'date_of_transaction' => $formattedDate,
                     'total_sales'         => $totalSales,
                     'transaction_count'   => $transactionCount,
-                    'contract_number'     => 'BP07-2000000000011',
-                    'contract_key'        => '66BIBZNNR9RGNCDLCW50YASVC23L8L',
-                    'pos_no'              => 'A1002688',
-                    'company_code'        => 'BP07',
+                    'contract_number'     => $storeCreds->contract_number,
+                    'contract_key'        => $storeCreds->contract_key,
+                    'pos_no'              => $storeCreds->pos_no,
+                    'company_code'        => $storeCreds->company_code,
                     'status'              => 'pending',
                 ]);
             }
@@ -354,14 +390,7 @@ class DashboardController extends Controller
             'TransactionCount'   => $posData->transaction_count,
         ];
 
-        // Send to API
-        $response = Http::withOptions(['verify' => false])
-            ->withHeaders([
-                'apiKey'    => config('services.mall_hookup.pos_supplier_api_key'),
-                'secretKey' => config('services.mall_hookup.secret_key'),
-            ])
-            ->asForm()
-            ->post(config('services.mall_hookup.pos_supplier_url'), $data);
+        $response = $this->sendMallHookupRequest($data);
 
         $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
         $status = $responseArray['status'] == 200 ? 'success' : 'failed';
@@ -393,35 +422,36 @@ class DashboardController extends Controller
     ]);
 }
 
-
-
     public function POSSupplierRetrieve (Request $request) {
+
+        $storeCreds = StoreCreds::first();
+
+        if (!$storeCreds) {
+            return response()->json([
+                'status'  => 400,
+                'message' => 'Missing store credentials. Please set up store credentials before proceeding.',
+                'data'    => [],
+            ], 400);
+        }
         $posData = PosData::where('id', $request->pos_data_id)->first();
         $dateOfTransaction = Carbon::parse($posData->date_of_transaction)->format("m/d/Y");
         
         $data = [
-            'Contractno' => $posData->contract_number,
-            'GenerateKey'    =>  $posData->contract_key,
-            'POSNO'           =>  $posData->pos_no,
-            'CompanyNameCol'    =>  $posData->company_code,
+            'Contractno' => $storeCreds->contract_number,
+            'GenerateKey'    =>  $storeCreds->contract_key,
+            'POSNO'           =>  $storeCreds->pos_no,
+            'CompanyNameCol'    =>  $storeCreds->company_code,
             'TransactionDateCol' => $dateOfTransaction,
         ];
 
-          $response = Http::withOptions(['verify' => false])
-            ->withHeaders([
-                'apiKey'    => config('services.mall_hookup.pos_supplier_retrieve_api_key'),
-                'secretKey' => config('services.mall_hookup.secret_key'),
-            ])
-            ->asForm()
-            ->post(config('services.mall_hookup.pos_supplier_retrieve_url'), $data);
-
-         $rawResponse = $response->body();
+        $response = $this->sendMallHookupRequest($data, 'supplier_retrieve');
+        
+        $rawResponse = $response->body();
         $clean = preg_replace('/[[:cntrl:]]/', '', $rawResponse);
 
         $responseArray = json_decode($clean, true);
         
          return response()->json($responseArray);
-
 
     }
 }

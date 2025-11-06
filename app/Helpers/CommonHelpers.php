@@ -464,4 +464,27 @@ class CommonHelpers {
         return true;
     }
 
+    public static function getEtpConnectionConfig()
+    {
+        $creds = null;
+        try {
+            $creds = DB::table('etp_creds')->first();
+        } catch (\Throwable $e) {
+            // ignore if not available
+        }
+
+        return [
+            'driver' => 'sqlsrv',
+            'host' => $creds->etp_ip ?? env('DB_HOST_ETP', 'localhost'),
+            'port' => 1433,
+            'database' => $creds->etp_database_name ?? env('DB_DATABASE_ETP', 'forge'),
+            'username' => env('DB_USERNAME_ETP', 'forge'),
+            'password' => env('DB_DATABASE_PASSWORD_ETP', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'trust_server_certificate' => true,
+        ];
+    }
+
 }

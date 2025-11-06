@@ -141,6 +141,9 @@ use App\Http\Controllers\Vendors\VendorsController;
 use App\Http\Controllers\VendorTypes\VendorTypesController;
 use App\Http\Controllers\WarehouseCategories\WarehouseCategoriesController;
 use App\Http\Controllers\Warranties\WarrantiesController;
+use App\Http\Controllers\EtpCreds\EtpCredsController;
+use App\Http\Controllers\StoreCreds\StoreCredsController;
+use App\Http\Controllers\MallHookupApi\MallHookupApiController;
 use Illuminate\Support\Facades\Log;
 /*
 |--------------------------------------------------------------------------
@@ -178,7 +181,7 @@ Route::group(['middleware' => ['auth', 'web']], function () {
 });
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('dashboard', [DashboardController::class, 'getIndex'])->name('dashboard');
     Route::get('/get-pos-data', [DashboardController::class, 'getPosData']);
     Route::get('/resync-yesterday', [DashboardController::class, 'resyncYesterday']);
     Route::get('/resync-all-failed', [DashboardController::class, 'resyncAllFailed']);
@@ -186,6 +189,15 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/pos-supplier-retrieve', [DashboardController::class, 'POSSupplierRetrieve']);
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');
+
+    Route::post('/etp_creds/add_save', [EtpCredsController::class, 'addSave']);
+    Route::post('/etp_creds/update', [EtpCredsController::class, 'update']);
+
+    Route::post('/store_creds/add_save', [StoreCredsController::class, 'addSave']);
+    Route::post('/store_creds/update', [StoreCredsController::class, 'update']);
+
+    Route::post('/mall_hookup_api/add_save', [MallHookupApiController::class, 'addSave']);
+    Route::post('/mall_hookup_api/update', [MallHookupApiController::class, 'update']);
 
     //USERS
     Route::prefix('users')->group(function () {
