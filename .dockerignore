@@ -1,23 +1,35 @@
-# Ignore node and vendor since we'll mount them / build them separately
+# Git
+.git
+.gitignore
+
+# Node artifacts (rebuilt in node stage)
 node_modules
 npm-debug.log
 yarn-error.log
 
+# Composer vendor from host (we copy vendor from composer stage instead)
 vendor
-composer.lock
 
-# Ignore git and IDE stuff
-.git
-.gitignore
-*.md
-.idea
-.vscode
+# Laravel caches/logs
+storage/*.key
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/logs/*
 
-# Ignore OS/system files
-.DS_Store
+# Built assets from host (we copy from node-build stage)
+public/build
+
+# Docker/local
+docker-compose*.yml
+Dockerfile*
+docker/
+.dockerignore
+
+# OS/editor junk
+*.DS_Store
 Thumbs.db
 
-# Ignore logs and caches
-storage/logs/*
-storage/framework/sessions/*
-storage/framework/cache/*
+# IMPORTANT: keep .env in the build context
+!.env

@@ -2,76 +2,50 @@ version: "3.8"
 
 services:
     app:
-        build:
-            context: .
-            dockerfile: docker/php/Dockerfile
-        container_name: laravel-app
-        working_dir: /var/www
-        volumes:
-            - .:/var/www
-            - ./vendor:/var/www/vendor
-        depends_on:
-            - db
-        networks:
-            - laravel
-        restart: always
+        image: mall-hookup/laravel-app:latest
+        environment:
+            APP_ENV: production
+            APP_DEBUG: "false"
+            APP_URL: http://localhost:8080
+            DB_CONNECTION: mysql
+            DB_HOST: db
+            DB_PORT: 3306
+            DB_DATABASE: mall_hookup
+            DB_USERNAME: root
+            DB_PASSWORD: ""
+        depends_on: [db]
+        networks: [laravel]
+        restart: unless-stopped
 
     nginx:
-        image: nginx:stable
-        container_name: laravel-nginx
+        build:
+            context: ./docker/nginx
+            dockerfile: Dockerfile
         ports:
             - "8080:80"
-        volumes:
-            - .:/var/www
-            - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
         depends_on:
             - app
         networks:
             - laravel
-        restart: always
+        restart: unless-stopped
 
     db:
         image: mysql:8.0
-        container_name: laravel-db
         environment:
-            MYSQL_ROOT_PASSWORD:
-            MYSQL_ALLOW_EMPTY_PASSWORD: yes
+            MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
             MYSQL_DATABASE: mall_hookup
         volumes:
             - dbdata:/var/lib/mysql
-        networks:
-            - laravel
-        restart: always
-        # Optional: expose DB for GUI tools like TablePlus
-        # ports:
-        #   - "33060:3306"
-
-    node:
-        image: node:18
-        container_name: laravel-node
-        working_dir: /var/www
-        volumes:
-            - .:/var/www
-        command: >
-            bash -c "npm install && npm run dev"
-        ports:
-            - "5173:5173"
-        networks:
-            - laravel
-        restart: always
+        networks: [laravel]
+        restart: unless-stopped
 
     scheduler:
-        image: laravel-app # Same image as the PHP app
-        container_name: laravel-scheduler
-        depends_on:
-            - app
-        volumes:
-            - .:/var/www
-        entrypoint: >
-            bash -c 'while true; do php artisan schedule:run --no-interaction >> /var/www/storage/logs/scheduler.log 2>&1; sleep 60; done'
-        networks:
-            - laravel
-        restart: always
+        image: mall-hookup/laravel-app:latest
+        depends_on: [app]
+        command: >
+            sh -c 'while true; do php artisan schedule:run --no-interaction >> /var/www/storage/logs/scheduler.log 2>&1; sleep 60; done'
+        networks: [laravel]
+        restart: unless-stopped
 
 volumes:
     dbdata:

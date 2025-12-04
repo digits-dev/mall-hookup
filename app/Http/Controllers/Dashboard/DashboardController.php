@@ -25,6 +25,9 @@ class DashboardController extends Controller
     public function getIndex(): Response
     {
 
+        $storeId = EtpCreds::value('store_id');
+        $today = Carbon::now()->format('Ymd');
+
         $data = [];
         $data['api_responses'] = DB::table('pos_data')
             ->leftJoin('api_responses', 'pos_data.id', 'api_responses.pos_data_id')
@@ -33,7 +36,16 @@ class DashboardController extends Controller
             ->get();
         $data['posData'] = DB::table('pos_data')->orderBy('date_of_transaction', 'desc')->get();
         $data['my_privilege_id'] = CommonHelpers::myPrivilegeId();
-        
+
+        $eod = DB::connection('sqlsrv')
+        ->table('BodEodTrn')
+        ->where('Warehouse', $storeId)
+        ->where('BODDate', $today)
+        ->select('TransactionStatus')
+        ->first();
+
+         $data['isEodNotDone'] = !$eod || $eod->TransactionStatus == 0;
+
         return Inertia::render('Dashboard/DataSyncDashboard', $data);
     }
 
@@ -66,11 +78,10 @@ class DashboardController extends Controller
             ], 400);
         }
 
-        // exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$today}','{$today}'");
         $today = now()->format('Ymd');
         $posData = DB::connection('sqlsrv')->select("
         SET NOCOUNT ON; 
-        exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','20250514','20250514'");
+        exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$today}','{$today}'");
 
             if (empty($posData)) {
                 return response()->json([
@@ -82,7 +93,7 @@ class DashboardController extends Controller
 
         $posData = $posData[0];
 
-        $totalSales = $posData->GrossTotalAmt + $posData->Discount + $posData->Returns - $posData->VatTotalAmt;
+        $totalSales = $posData->GrossTotalAmt + $posData->Discount + $posData->Returns - $posData->VatTotalAmt + $posData->Voids;
         $transactionCount = $posData->DocRangeTo - $posData->DocRangeFrom;
 
         $date = DateTime::createFromFormat("Ymd", $posData->CreateDate);
@@ -151,11 +162,11 @@ class DashboardController extends Controller
         $storeCreds = StoreCreds::first();
 
         if (empty($storeId) || !$storeCreds) {
-                Log::info("Missing store credentials. Please set up store ID and store credentials before proceeding.");
-                return [
-                    'status'  => 404,
-                    'message' => "Missing store credentials. Please set up store ID and store credentials before proceeding."
-                ];
+            Log::info("Missing store credentials. Please set up store ID and store credentials before proceeding.");
+            return [
+                'status'  => 404,
+                'message' => "Missing store credentials. Please set up store ID and store credentials before proceeding."
+            ];
         }
 
         $yesterday = Carbon::yesterday()->format('Y-m-d');
@@ -163,39 +174,7 @@ class DashboardController extends Controller
         // Check if POS data exists
         $posData = PosData::where('date_of_transaction', $yesterday)->first();
 
-        if (!$posData) {
-            // Pull from SQL Server if missing
-            $sqlDate = Carbon::yesterday()->format('Ymd');
-            $sqlData = DB::connection('sqlsrv')->select("
-                SET NOCOUNT ON; 
-                exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$sqlDate}','{$sqlDate}'
-            ");
-
-            if (empty($sqlData)) {
-                Log::info("No POS data found for {$yesterday} on SQL Server.");
-                return [
-                    'status'  => 404,
-                    'message' => "No POS data found for {$yesterday}."
-                ];
-            }
-
-            $record = $sqlData[0];
-            $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - $record->VatTotalAmt;
-            $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
-
-            $posData = PosData::create([
-                'date_of_transaction' => $yesterday,
-                'total_sales'         => $totalSales,
-                'transaction_count'   => $transactionCount,
-                'contract_number'     => $storeCreds->contract_number,
-                'contract_key'        => $storeCreds->contract_key,
-                'pos_no'              => $storeCreds->pos_no,
-                'company_code'        => $storeCreds->company_code,
-                'status'              => 'pending',
-            ]);
-        }
-
-        if ($posData->status === 'success') {
+        if ($posData && $posData->status === 'success') {
             Log::info("Yesterday's sync already succeeded.");
             return [
                 'status'  => 200,
@@ -203,15 +182,48 @@ class DashboardController extends Controller
             ];
         }
 
-        // Build API payload
+        // Always pull latest POS data from SQL if not success
+        $sqlDate = Carbon::yesterday()->format('Ymd');
+        $sqlData = DB::connection('sqlsrv')->select("
+            SET NOCOUNT ON; 
+            exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$sqlDate}','{$sqlDate}'
+        ");
+
+        if (empty($sqlData)) {
+            Log::info("No POS data found for {$yesterday} on SQL Server.");
+            return [
+                'status'  => 404,
+                'message' => "No POS data found for {$yesterday}."
+            ];
+        }
+
+        $record = $sqlData[0];
+        $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - $record->VatTotalAmt + $record->Voids;
+        $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
+
+        // Update or create PosData
+        $posData = PosData::updateOrCreate(
+            ['date_of_transaction' => $yesterday],
+            [
+                'total_sales'       => $totalSales,
+                'transaction_count' => $transactionCount,
+                'contract_number'   => $storeCreds->contract_number,
+                'contract_key'      => $storeCreds->contract_key,
+                'pos_no'            => $storeCreds->pos_no,
+                'company_code'      => $storeCreds->company_code,
+                'status'            => 'pending', // reset to pending for API call
+            ]
+        );
+
+        // Build API payload using latest SQL data
         $data = [
             'Contractno'         => $posData->contract_number,
             'GenerateKey'        => $posData->contract_key,
             'POSNO'              => $posData->pos_no,
             'CompanyNameCol'     => $posData->company_code,
             'TransactionDateCol' => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
-            'TotalSalesCol'      => $posData->total_sales,
-            'TransactionCount'   => $posData->transaction_count,
+            'TotalSalesCol'      => $totalSales,
+            'TransactionCount'   => $transactionCount,
         ];
 
         $response = $this->sendMallHookupRequest($data);
@@ -219,7 +231,7 @@ class DashboardController extends Controller
         $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
         $status = $responseArray['status'] == 200 ? 'success' : 'failed';
 
-        // Log attempt
+        // Log API attempt
         ApiResponse::create([
             'pos_data_id'  => $posData->id,
             'payload'      => json_encode($data),
@@ -229,24 +241,31 @@ class DashboardController extends Controller
             'raw_response' => json_encode($responseArray),
         ]);
 
-        // Update pos_data status
-        $posData->update(['status' => $status]);
+        // Update pos_data with latest totals and status
+        $posData->update([
+            'status'            => $status,
+            'total_sales'       => $totalSales,
+            'transaction_count' => $transactionCount,
+        ]);
 
         return $responseArray;
     }
 
-        public function resyncAllFailed()
+
+    public function resyncAllFailed()
     {
+        $storeId = EtpCreds::value('store_id');
         $storeCreds = StoreCreds::first();
 
-        if (!$storeCreds) {
+        if (!$storeId || !$storeCreds) {
             return response()->json([
                 'status'  => 400,
-                'message' => 'Missing store credentials. Please set up store credentials before proceeding.',
+                'message' => 'Missing store credentials.',
                 'data'    => [],
             ], 400);
         }
-        
+
+        // Get all failed entries
         $failedData = PosData::where('status', 'failed')->get();
 
         if ($failedData->isEmpty()) {
@@ -257,27 +276,55 @@ class DashboardController extends Controller
         }
 
         $results = [];
-        
+
         foreach ($failedData as $posData) {
+
+            $sqlDate = Carbon::parse($posData->date_of_transaction)->format('Ymd');
+
+            $sqlData = DB::connection('sqlsrv')->select("
+                SET NOCOUNT ON; 
+                exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$sqlDate}','{$sqlDate}'
+            ");
+
+            // If SQL has data, update POS row before sending payload
+            if (!empty($sqlData)) {
+                $record = $sqlData[0];
+                $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - 
+                            $record->VatTotalAmt + $record->Voids;
+                $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
+
+                // ✅ Update existing POS record with latest SQL data
+                $posData->update([
+                    'total_sales'       => $totalSales,
+                    'transaction_count' => $transactionCount,
+                    'contract_number'   => $storeCreds->contract_number,
+                    'contract_key'      => $storeCreds->contract_key,
+                    'pos_no'            => $storeCreds->pos_no,
+                    'company_code'      => $storeCreds->company_code,
+                    'status'            => 'pending', // reset before sending
+                ]);
+            }
+
+            // Build payload from updated posData
             $data = [
-                'Contractno' => $storeCreds->contract_number,
-                'GenerateKey'    =>  $storeCreds->contract_key,
-                'POSNO'           =>  $storeCreds->pos_no,
-                'CompanyNameCol'    =>   $storeCreds->company_code,
-                'TransactionDateCol'   => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
-                'TotalSalesCol'        => $posData->total_sales,
-                'TransactionCount'     => $posData->transaction_count,
+                'Contractno'          => $posData->contract_number,
+                'GenerateKey'         => $posData->contract_key,
+                'POSNO'               => $posData->pos_no,
+                'CompanyNameCol'      => $posData->company_code,
+                'TransactionDateCol'  => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
+                'TotalSalesCol'       => $posData->total_sales,
+                'TransactionCount'    => $posData->transaction_count,
             ];
 
+            // Send request
             $response = $this->sendMallHookupRequest($data);
-
             $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
             $status = $responseArray['status'] == 200 ? 'success' : 'failed';
 
-            // update latest status
+            // Update status
             $posData->update(['status' => $status]);
 
-            // log attempt in history
+            // Log attempt
             ApiResponse::create([
                 'pos_data_id'  => $posData->id,
                 'payload'      => json_encode($data),
@@ -294,133 +341,124 @@ class DashboardController extends Controller
             ];
         }
 
-        if ($status == 'success') {
         return response()->json([
             'status'  => 200,
-            'message' => 'Resync complete',
+            'message' => 'Resync of failed data complete.',
             'results' => $results,
         ]);
-        }else {
-            return response()->json($responseArray);
-        }
-       
     }
+
 
     public function resyncBetweenDates(Request $request)
     {
-    // Validate input
-    $request->validate([
-        'from' => 'required|date',
-        'to'   => 'required|date|after_or_equal:from',
-    ]);
+        // Validate input
+        $request->validate([
+            'from' => 'required|date',
+            'to'   => 'required|date|after_or_equal:from',
+        ]);
 
-    $from = Carbon::parse($request->from)->format('Y-m-d');
-    $to   = Carbon::parse($request->to)->format('Y-m-d');
+        $from = Carbon::parse($request->from)->format('Y-m-d');
+        $to   = Carbon::parse($request->to)->format('Y-m-d');
+        $period = CarbonPeriod::create($from, $to);
 
-    $period = CarbonPeriod::create($from, $to);
-    $transactions = collect();
+        $storeId = EtpCreds::value('store_id');
+        $storeCreds = StoreCreds::first();
 
-    $storeId = EtpCreds::value('store_id');
-    $storeCreds = StoreCreds::first();
+        if (empty($storeId) || !$storeCreds) {
+            return response()->json([
+                'status'  => 400,
+                'message' => 'Missing store credentials. Please set up store ID and store credentials before proceeding.',
+                'data'    => [],
+            ], 400);
+        }
 
-    if (empty($storeId) || !$storeCreds) {
-        return response()->json([
-            'status'  => 400,
-            'message' => 'Missing store credentials. Please set up store ID and store credentials before proceeding.',
-            'data'    => [],
-        ], 400);
-    }
+        $results = [];
 
-
-    foreach ($period as $date) {
-        $formattedDate = $date->format('Y-m-d');
-
-        // Check if POS data exists for this date
-        $posData = PosData::where('date_of_transaction', $formattedDate)->first();
-
-        if (!$posData) {
-            // Pull missing day from SQL Server
+        foreach ($period as $date) {
+            $formattedDate = $date->format('Y-m-d');
             $sqlDate = $date->format('Ymd');
+
+            // Pull latest POS data from SQL Server
             $sqlData = DB::connection('sqlsrv')->select("
                 SET NOCOUNT ON; 
                 exec [RptSpESalesSummaryReport_BIR] 100,'{$storeId}','{$sqlDate}','{$sqlDate}'
             ");
 
-            if (!empty($sqlData)) {
-                $record = $sqlData[0];
-                $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - $record->VatTotalAmt;
-                $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
-
-                $posData = PosData::create([
-                    'date_of_transaction' => $formattedDate,
-                    'total_sales'         => $totalSales,
-                    'transaction_count'   => $transactionCount,
-                    'contract_number'     => $storeCreds->contract_number,
-                    'contract_key'        => $storeCreds->contract_key,
-                    'pos_no'              => $storeCreds->pos_no,
-                    'company_code'        => $storeCreds->company_code,
-                    'status'              => 'pending',
-                ]);
+            if (empty($sqlData)) {
+                Log::info("No POS data found for {$formattedDate} on SQL Server.");
+                $results[] = [
+                    'Date of Transaction' => $formattedDate,
+                    'status'              => 'no_data',
+                    'message'             => "No POS data found for {$formattedDate}."
+                ];
+                continue;
             }
+
+            $record = $sqlData[0];
+            $totalSales = $record->GrossTotalAmt + $record->Discount + $record->Returns - $record->VatTotalAmt + $record->Voids;
+            $transactionCount = $record->DocRangeTo - $record->DocRangeFrom;
+
+            // Update or create POS data with latest SQL values
+            $posData = PosData::updateOrCreate(
+                ['date_of_transaction' => $formattedDate],
+                [
+                    'total_sales'       => $totalSales,
+                    'transaction_count' => $transactionCount,
+                    'contract_number'   => $storeCreds->contract_number,
+                    'contract_key'      => $storeCreds->contract_key,
+                    'pos_no'            => $storeCreds->pos_no,
+                    'company_code'      => $storeCreds->company_code,
+                    'status'            => 'pending', // reset for API call
+                ]
+            );
+
+            // Build API payload using latest SQL values
+            $data = [
+                'Contractno'         => $posData->contract_number,
+                'GenerateKey'        => $posData->contract_key,
+                'POSNO'              => $posData->pos_no,
+                'CompanyNameCol'     => $posData->company_code,
+                'TransactionDateCol' => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
+                'TotalSalesCol'      => $totalSales,
+                'TransactionCount'   => $transactionCount,
+            ];
+
+            // Send payload
+            $response = $this->sendMallHookupRequest($data);
+            $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
+            $status = $responseArray['status'] == 200 ? 'success' : 'failed';
+
+            // Update pos_data status
+            $posData->update([
+                'status'            => $status,
+                'total_sales'       => $totalSales,
+                'transaction_count' => $transactionCount,
+            ]);
+
+            // Log attempt
+            ApiResponse::create([
+                'pos_data_id'  => $posData->id,
+                'payload'      => json_encode($data),
+                'status'       => $status,
+                'message'      => $responseArray['message'] ?? null,
+                'data'         => json_encode($response->json($data)),
+                'raw_response' => json_encode($responseArray),
+            ]);
+
+            $results[] = [
+                'Date of Transaction' => $posData->date_of_transaction,
+                'status'              => $status,
+                'message'             => $responseArray['message'] ?? null,
+            ];
         }
 
-        if ($posData) {
-            $transactions->push($posData);
-        }
-    }
-
-    if ($transactions->isEmpty()) {
         return response()->json([
-            'status'  => 404,
-            'message' => "No transactions found between {$from} and {$to}.",
+            'status'  => 200,
+            'message' => "Resync complete for transactions between {$from} and {$to}.",
+            'results' => $results,
         ]);
     }
 
-    $results = [];
-
-    foreach ($transactions as $posData) {
-
-        $data = [
-            'Contractno'         => $posData->contract_number,
-            'GenerateKey'        => $posData->contract_key,
-            'POSNO'              => $posData->pos_no,
-            'CompanyNameCol'     => $posData->company_code,
-            'TransactionDateCol' => Carbon::parse($posData->date_of_transaction)->format('m/d/Y'),
-            'TotalSalesCol'      => $posData->total_sales,
-            'TransactionCount'   => $posData->transaction_count,
-        ];
-
-        $response = $this->sendMallHookupRequest($data);
-
-        $responseArray = json_decode(preg_replace('/[[:cntrl:]]/', '', $response->body()), true);
-        $status = $responseArray['status'] == 200 ? 'success' : 'failed';
-
-        // Update POS data status
-        $posData->update(['status' => $status]);
-
-        // Log attempt in ApiResponse
-        ApiResponse::create([
-            'pos_data_id'  => $posData->id,
-            'payload'      => json_encode($data),
-            'status'       => $status,
-            'message'      => $responseArray['message'] ?? null,
-            'data'         => json_encode($response->json($data)),
-            'raw_response' => json_encode($responseArray),
-        ]);
-
-        $results[] = [
-            'Date of Transaction' => $posData->date_of_transaction,
-            'status'              => $status,
-            'message'             => $responseArray['message'] ?? null,
-        ];
-    }
-
-    return response()->json([
-        'status'  => 200,
-        'message' => "Resync complete for transactions between {$from} and {$to}.",
-        'results' => $results,
-    ]);
-}
 
     public function POSSupplierRetrieve (Request $request) {
 

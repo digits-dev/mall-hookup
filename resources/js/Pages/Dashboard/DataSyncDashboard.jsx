@@ -14,10 +14,16 @@ import {
     XCircle,
     Clock,
     RefreshCw,
+    AlertCircle,
 } from "lucide-react";
 import axios from "axios";
 
-const DataSyncDashboard = ({ api_responses, posData, my_privilege_id }) => {
+const DataSyncDashboard = ({
+    api_responses,
+    posData,
+    my_privilege_id,
+    isEodNotDone,
+}) => {
     const [isLoading, setIsLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isModalDateOpen, setIsModalDateOpen] = useState(false);
@@ -308,16 +314,34 @@ const DataSyncDashboard = ({ api_responses, posData, my_privilege_id }) => {
                                 )}
                                 {[1, 3].includes(my_privilege_id) && (
                                     <>
-                                        <button
-                                            onClick={handleSyncData}
-                                            disabled={
-                                                isSyncedToday || isLoading
-                                            }
-                                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
-                                        >
-                                            <RefreshCw className="h-5 w-5" />
-                                            Sync Data to Mall
-                                        </button>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={handleSyncData}
+                                                disabled={
+                                                    isEodNotDone ||
+                                                    isSyncedToday ||
+                                                    isLoading
+                                                }
+                                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
+                                            >
+                                                <RefreshCw className="h-5 w-5" />
+                                                Sync Data to Mall
+                                            </button>
+
+                                            {isEodNotDone && (
+                                                <div className="relative group">
+                                                    {/* Warning Icon */}
+                                                    <AlertCircle className="h-5 w-5 text-red-600 cursor-pointer" />
+
+                                                    {/* Tooltip */}
+                                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-red-600 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-10">
+                                                        Please complete EOD
+                                                        before syncing
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <button
                                             onClick={handleReSyncYesterday}
                                             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-md font-medium"
@@ -338,7 +362,7 @@ const DataSyncDashboard = ({ api_responses, posData, my_privilege_id }) => {
                                     <p className="text-sm font-medium text-gray-600">
                                         Today's Status
                                     </p>
-                                    {todaySync ? (
+                                    {todaySync?.status ? (
                                         <div
                                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2 ${getStatusColor(
                                                 todaySync.status
@@ -349,7 +373,7 @@ const DataSyncDashboard = ({ api_responses, posData, my_privilege_id }) => {
                                                     todaySync.status
                                                 )}
                                             </span>
-                                            {todaySync.status.toUpperCase()}
+                                            {todaySync.status?.toUpperCase()}
                                         </div>
                                     ) : (
                                         <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-md font-medium mt-2 text-red-600 bg-red-100">
